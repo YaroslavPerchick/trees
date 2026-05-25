@@ -1,36 +1,12 @@
-# /// script
-# dependencies = ["streamlit"]
-# ///
-import os
-import sys
-
-"""
-Streamlit-интерфейс для проверки поискового индекса.
-
-Вызывает скомпилированный C-бинарник ./app с разными бэкендами (avl, rb, btree).
-C-программа должна выводить JSON в stdout:
-
-    {
-      "total": 47,
-      "time_ms": 3.2,
-      "results": [
-        {"doc_id": 1234, "title": "...", "score": 3}
-      ]
-    }
-
-Запуск:
-    uv add streamlit
-    streamlit run app.py
-"""
-
-import json
+import streamlit as st
 import subprocess
+import platform
 import time
 from pathlib import Path
 
-import streamlit as st  # type: ignore[import-untyped]
-
-APP_BINARY = Path(__file__).parent / "app"
+# В Windows добавляем .exe, в Linux/Mac оставляем ./app
+binary_name = "app.exe" if platform.system() == "Windows" else "app"
+APP_BINARY = Path(__file__).parent / binary_name
 
 st.set_page_config(page_title="Stack Overflow Search", layout="wide")
 st.title("Stack Overflow Search")
@@ -50,41 +26,32 @@ if search_clicked:
     if not query.strip():
         st.warning("Введите запрос")
     elif not APP_BINARY.exists():
-        st.error(f"Бинарник не найден: {APP_BINARY}\nСоберите проект: `make app`")
+        st.error(f"Бинарник не найден: {APP_BINARY}\nСобери проект командой gcc из прошлого сообщения!")
     else:
-        with st.spinner("Поиск..."):
-            t0 = time.monotonic()
+        with st.spinner("Индексация и поиск..."):
+            # Запускаем БЕЗ флага --json, так как наш C его не поддерживает
             proc = subprocess.run(
-                [str(APP_BINARY), "search", f"--type={tree_type}", "--json", query],
+                [str(APP_BINARY), "search", f"--type={tree_type}", query],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                encoding='utf-8', # Важно для кириллицы/спецсимволов
+                timeout=60,       # Увеличил таймаут, так как данных много
             )
-            wall_ms = (time.monotonic() - t0) * 1000
 
         if proc.returncode != 0:
-            st.error(f"Ошибка выполнения:\n```\n{proc.stderr}\n```")
+            st.error(f"Ошибка выполнения (код {proc.returncode}):\n```\n{proc.stderr}\n```")
         else:
-            data: dict = {}
-            try:
-                data = json.loads(proc.stdout)
-            except json.JSONDecodeError:
-                st.error(
-                    f"Не удалось распарсить вывод программы:\n```\n{proc.stdout[:500]}\n```"
-                )
-                st.stop()
-
-            total   = data.get("total", 0)
-            idx_ms  = data.get("time_ms", wall_ms)
-            results = data.get("results", [])
-
-            st.write(f"**Найдено:** {total} документов &nbsp;|&nbsp; **Время:** {idx_ms:.1f} мс")
-
-            if not results:
+            # Выводим «сырой» текст из консоли Си-программы
+            output = proc.stdout
+            
+            if "Найдено: 0 документов" in output or not output.strip():
                 st.info("Ничего не найдено")
             else:
-                for i, r in enumerate(results[:10], 1):
-                    with st.expander(f"{i}. {r.get('title', '—')}"):
-                        cols = st.columns([1, 1])
-                        cols[0].write(f"**Doc ID:** {r.get('doc_id', '—')}")
-                        cols[1].write(f"**Score:** {r.get('score', '—')}")
+                # Рисуем красивую рамку с результатом
+                st.markdown("### Результаты поиска")
+                st.code(output, language="text")
+
+            # Вывод логов для отладки внизу
+            with st.expander("Техническая информация (Debug)"):
+                st.text(f"Команда: {' '.join(proc.args)}")
+                st.text(f"Размер вывода: {len(output)} байт")
