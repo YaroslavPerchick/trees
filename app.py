@@ -35,7 +35,7 @@ if search_clicked:
                 capture_output=True,
                 text=True,
                 encoding='utf-8', # Важно для кириллицы/спецсимволов
-                timeout=60,       # Увеличил таймаут, так как данных много
+                timeout=600,       # Увеличил таймаут, так как данных много
             )
 
         if proc.returncode != 0:
@@ -43,7 +43,7 @@ if search_clicked:
         else:
             # Выводим «сырой» текст из консоли Си-программы
             output = proc.stdout
-            
+
             if "Найдено: 0 документов" in output or not output.strip():
                 st.info("Ничего не найдено")
             else:
